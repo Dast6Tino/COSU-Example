@@ -1,4 +1,9 @@
 <resources>
     <string name="app_name">cosuExample</string>
     <string name="string_lock">Click</string>
+    <string name="exit_kiosk_mode">Exit</string>
+    <string name="kiosk_not_permitted">Not permitted</string>
+    <string name="enter_kiosk_mode">Enter</string>
+    <string name="stringNextActivity">Next</string>
+    <string name="removeAdminReceiver">Remove admin application</string>
 </resources>

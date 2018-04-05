@@ -11,7 +11,7 @@ class DeviceAdminReceiver : android.app.admin.DeviceAdminReceiver() {
     companion object {
         val TAG = "DeviceAdministrator"
         fun getComponentName(context: Context): ComponentName {
-            return ComponentName(context.getApplicationContext(), DeviceAdminReceiver::class.java)
+            return ComponentName(context.applicationContext, DeviceAdminReceiver::class.java)
         }
     }
 }

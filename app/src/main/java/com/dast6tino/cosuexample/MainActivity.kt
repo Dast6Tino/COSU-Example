@@ -2,173 +2,97 @@ package com.dast6tino.cosuexample
 
 import android.app.Activity
 import android.os.Bundle
-import android.os.BatteryManager
 import android.content.ComponentName
-import android.content.Intent
-import android.content.IntentFilter
-import android.app.admin.SystemUpdatePolicy
-import android.os.UserManager
-import android.app.ActivityManager
-import android.content.pm.PackageManager
 import android.widget.Toast
-import android.provider.Settings
 import android.app.admin.DevicePolicyManager
 import android.content.Context
-import android.view.Menu
-import android.view.MenuItem
+import android.content.Intent
+import android.util.Log
+import android.view.View
+import com.dast6tino.cosuexample.DeviceAdminReceiver.Companion.TAG
 import kotlinx.android.synthetic.main.activity_main.*
+import java.lang.Package.getPackage
+
+
 
 class MainActivity : Activity() {
-    private var mDevicePolicyManager: DevicePolicyManager? = null
-    private var mPackageManager: PackageManager? = null
-    val LOCK_ACTIVITY_KEY = "lock_activity"
-    val FROM_LOCK_ACTIVITY = 1
-    var stateLock = false
-
-    // add a variable to keep the component name in the application.
-    private var mAdminComponentName: ComponentName? = null
+    var decorView: View? = null
+    var mDpm: DevicePolicyManager? = null
+    var isKioskEnabled = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        setActionBar(toolbar)
+        Log.d (TAG, "ComponentName =" + DeviceAdminReceiver.getComponentName (applicationContext))
 
-        mDevicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val deviceAdmin = ComponentName(this, DeviceAdminReceiver::class.java)
+        mDpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        if (!mDpm!!.isAdminActive(deviceAdmin)) {
+            Toast.makeText(this, "not_device_admin", Toast.LENGTH_SHORT).show()
+        }
 
-        mPackageManager = this.packageManager
-
-        mAdminComponentName = DeviceAdminReceiver.getComponentName(this)
-        mDevicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        if (mDevicePolicyManager!!.isDeviceOwnerApp(packageName)) {
-            setDefaultCosuPolicies(true)
+        if (mDpm!!.isDeviceOwnerApp(packageName)) {
+            mDpm!!.setLockTaskPackages(deviceAdmin, arrayOf(packageName))
         } else {
-            Toast.makeText(applicationContext, "Application not set to device owner", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "not_device_owner", Toast.LENGTH_SHORT).show()
         }
 
-        val intent = intent
+        decorView = window.decorView
 
-        if (intent.getIntExtra(LOCK_ACTIVITY_KEY, 0) == FROM_LOCK_ACTIVITY) {
-            mDevicePolicyManager!!.clearPackagePersistentPreferredActivities(
-                    mAdminComponentName!!, packageName)
-            mPackageManager!!.setComponentEnabledSetting(
-                    ComponentName(applicationContext, MainActivity::class.java),
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    PackageManager.DONT_KILL_APP)
+        webView.loadUrl("https://dast6tino.github.io/index")
+
+        lockButton.setOnClickListener {
+            enableKioskMode(isKioskEnabled)
         }
-
+        nextActivityButton.setOnClickListener {
+            startActivity(Intent(this, NextActivity::class.java))
+            finish()
+        }
+        removeAdminReceiver.setOnClickListener {
+            /*val dpm = this.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            dpm.clearDeviceOwnerApp(getPackage().toString())*/
+            mDpm!!.clearDeviceOwnerApp(packageName)
+        }
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.lock_menu, menu)
-        return true
+    override fun onResume() {
+        super.onResume()
+        hideSystemUI()
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean =
-            if (item.itemId == R.id.changeLockState) {
-                onLockClick()
-                true
+    private fun enableKioskMode(enabled: Boolean) {
+        try {
+            if (!enabled) {
+                if (mDpm!!.isLockTaskPermitted(this.packageName)) {
+                    startLockTask()
+                    isKioskEnabled = true
+                    lockButton.text = getString(R.string.exit_kiosk_mode)
+                } else {
+                    Toast.makeText(this, getString(R.string.kiosk_not_permitted), Toast.LENGTH_SHORT).show()
+                }
             } else {
-                super.onOptionsItemSelected(item)
-            }
-
-    fun onLockClick() {
-        if (stateLock) {
-            if (mDevicePolicyManager!!.isDeviceOwnerApp(applicationContext.packageName)) {
-                val intentLock = Intent(applicationContext, MainActivity::class.java)
-                mPackageManager!!.setComponentEnabledSetting(
-                        ComponentName(applicationContext,
-                                MainActivity::class.java),
-                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                        PackageManager.DONT_KILL_APP)
-                startActivity(intentLock)
-            }
-
-            if (mDevicePolicyManager!!.isLockTaskPermitted(applicationContext.packageName)) {
-                val intentLock = Intent(applicationContext, MainActivity::class.java)
-                startActivity(intentLock)
-                finish()
-            }
-            stateLock = true
-        } else {
-            val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            if (am.lockTaskModeState == ActivityManager.LOCK_TASK_MODE_LOCKED) {
                 stopLockTask()
+                isKioskEnabled = false
+                lockButton.text = getString(R.string.enter_kiosk_mode)
             }
-            setDefaultCosuPolicies(false)
-            stateLock = false
-        }
-    }
-
-    override fun onStart() {
-        super.onStart()
-
-        if (mDevicePolicyManager!!.isLockTaskPermitted(this.packageName)) {
-            val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            if (am.lockTaskModeState == ActivityManager.LOCK_TASK_MODE_NONE) {
-                startLockTask()
-            }
-        }
-    }
-
-    private fun setDefaultCosuPolicies(active: Boolean) {
-        setUserRestriction(UserManager.DISALLOW_SAFE_BOOT, active)
-        setUserRestriction(UserManager.DISALLOW_FACTORY_RESET, active)
-        setUserRestriction(UserManager.DISALLOW_ADD_USER, active)
-        setUserRestriction(UserManager.DISALLOW_MOUNT_PHYSICAL_MEDIA, active)
-        setUserRestriction(UserManager.DISALLOW_ADJUST_VOLUME, active)
-
-        mDevicePolicyManager!!.setKeyguardDisabled(mAdminComponentName!!, active)
-        mDevicePolicyManager!!.setKeyguardDisabled(mAdminComponentName!!, active)
-
-        enableStayOnWhilePluggedIn(active)
-
-        if (active) {
-            mDevicePolicyManager!!.setSystemUpdatePolicy(mAdminComponentName!!, SystemUpdatePolicy.createWindowedInstallPolicy(60, 120))
-        } else {
-            mDevicePolicyManager!!.setSystemUpdatePolicy(mAdminComponentName!!, null)
-        }
-
-        mDevicePolicyManager!!.setLockTaskPackages(mAdminComponentName!!, if (active) arrayOf(packageName) else arrayOf())
-
-        val intentFilter = IntentFilter(Intent.ACTION_MAIN)
-        intentFilter.addCategory(Intent.CATEGORY_HOME)
-        intentFilter.addCategory(Intent.CATEGORY_DEFAULT)
-
-        if (active) {
-            mDevicePolicyManager!!.addPersistentPreferredActivity(mAdminComponentName!!, intentFilter, ComponentName(packageName, MainActivity::class.java.name))
-        } else {
-            mDevicePolicyManager!!.clearPackagePersistentPreferredActivities(mAdminComponentName!!, packageName)
+        } catch (e: Exception) {
+            // TODO: Log and handle appropriately
         }
 
     }
 
-    private fun setUserRestriction(restriction: String, disallow: Boolean) {
-        if (disallow) {
-            mDevicePolicyManager!!.addUserRestriction(mAdminComponentName!!, restriction)
-        } else {
-            mDevicePolicyManager!!.clearUserRestriction(mAdminComponentName!!, restriction)
-        }
-    }
+    // This snippet hides the system bars.
+    private fun hideSystemUI() {
+        // Set the IMMERSIVE flag.
+        // Set the content to appear under the system bars so that the content
+        // doesn't resize when the system bars hide and show.
+        decorView?.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION // hide nav bar
 
-    private fun enableStayOnWhilePluggedIn(enabled: Boolean) {
-        if (enabled) {
-            mDevicePolicyManager!!.setGlobalSetting(
-                    mAdminComponentName!!,
-                    Settings.Global.STAY_ON_WHILE_PLUGGED_IN,
-                    Integer.toString(BatteryManager.BATTERY_PLUGGED_AC
-                            or BatteryManager.BATTERY_PLUGGED_USB
-                            or BatteryManager.BATTERY_PLUGGED_WIRELESS))
-        } else {
-            mDevicePolicyManager!!.setGlobalSetting(
-                    mAdminComponentName!!,
-                    Settings.Global.STAY_ON_WHILE_PLUGGED_IN,
-                    "0"
-            )
-        }
-    }
+                or View.SYSTEM_UI_FLAG_FULLSCREEN // hide status bar
 
-    override fun onDestroy() {
-        if (stateLock) onLockClick()
-        super.onDestroy()
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
     }
 }
